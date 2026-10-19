@@ -9,6 +9,6 @@ let package = Package(
         .target(name: "ClipShelfCore"),
         .executableTarget(name: "ClipShelf", dependencies: ["ClipShelfCore"],
                           swiftSettings: [.defaultIsolation(MainActor.self)]),
-        .testTarget(name: "ClipShelfCoreTests", dependencies: ["ClipShelfCore"])
+        .executableTarget(name: "ClipShelfChecks", dependencies: ["ClipShelfCore"], path: "Tests/ClipShelfCoreTests")
     ]
 )

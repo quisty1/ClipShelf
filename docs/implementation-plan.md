@@ -25,3 +25,14 @@ Ruling: fresh project has no Git repository; work in the dedicated work/ClipShel
 Ruling: the user's explicit implementation request approves the presented plan; no extra plan review gate is needed.
 
 Ruling: CLT omits SwiftDataMacros; use native Core Data SQLite with Codable library snapshots. This preserves behavior and buildability without Xcode.
+
+## Completion ledger
+- Core, system integration and UI implemented. Full behavioral suite: 18 checks, 0 failures.
+- Swift Testing cannot import missing _Testing_Foundation development module in this CLT installation. Ruling: keep tests dependency-free as ClipShelfChecks executable with fail-fast exit status and real repository/isolated-pasteboard assertions.
+- Independent read-only review completed. Source-transition leak, first-save rollback and HTML-only capture were reproduced by failing tests and fixed; 18-check suite passed afterward.
+- Copy-only restores original app focus; target disappearance/focus-loss during insertion gives copy-only guidance.
+- Release app built for arm64, ad-hoc signed, strict codesign verification and plist validation passed.
+- Packaged app launched outside SwiftPM; dark/light layouts, search, arrows, collection creation, settings, long text and image filtering/preview inspected using native UI.
+- Ruling: discard clipboard generations on app activation because NSPasteboard does not reliably expose writer identity. Cost: a fast copy/switch can be omitted; prevents attribution to an allowed app after copying in an excluded app.
+- Ruling: no upstream/base branch exists in this fresh project; preserve local source and deliver artifacts instead of an unrelated merge/PR workflow.
+- System clipboard recording, cross-app injected paste, permission denial/revocation and login after reboot remain manual acceptance checks requiring user permissions. No system permission was granted automatically.

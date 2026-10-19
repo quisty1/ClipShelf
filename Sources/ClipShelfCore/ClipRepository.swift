@@ -1,29 +1,18 @@
 import Foundation
-import CoreData
 import Observation
 
 @MainActor @Observable public final class ClipRepository {
     public private(set) var entries: [ClipEntry] = []
     public private(set) var collections: [ClipCollection] = []
-    @ObservationIgnored private let coordinator: NSPersistentStoreCoordinator
-    @ObservationIgnored private let context: NSManagedObjectContext
+    @ObservationIgnored private let storage: any SnapshotStorage
     public let directory: URL
     public var imageDirectory: URL { directory.appendingPathComponent("Images", isDirectory: true) }
 
-    public init(directory: URL, inMemory: Bool = false) throws {
+    public init(directory: URL, inMemory: Bool = false, storage: (any SnapshotStorage)? = nil) throws {
         self.directory = directory
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("Images"), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let model = NSManagedObjectModel()
-        let entity = NSEntityDescription(); entity.name = "LibraryRecord"; entity.managedObjectClassName = "NSManagedObject"
-        let id = NSAttributeDescription(); id.name = "id"; id.attributeType = .UUIDAttributeType; id.isOptional = false
-        let data = NSAttributeDescription(); data.name = "snapshot"; data.attributeType = .binaryDataAttributeType; data.isOptional = false
-        entity.properties = [id, data]; entity.uniquenessConstraints = [["id"]]; model.entities = [entity]
-        coordinator = NSPersistentStoreCoordinator(managedObjectModel: model)
-        try coordinator.addPersistentStore(ofType: inMemory ? NSInMemoryStoreType : NSSQLiteStoreType, configurationName: nil,
-            at: inMemory ? nil : directory.appendingPathComponent("history.sqlite"), options: nil)
-        context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
-        context.persistentStoreCoordinator = coordinator
+        self.storage = try storage ?? CoreDataSnapshotStorage(directory: directory, inMemory: inMemory)
         try reload()
         try removeOrphanImages()
     }
@@ -33,8 +22,7 @@ import Observation
         var collections: [CollectionSnapshot]
     }
     private func reload() throws {
-        let records = try context.fetch(NSFetchRequest<NSManagedObject>(entityName: "LibraryRecord"))
-        guard let data = records.first?.value(forKey: "snapshot") as? Data else { return }
+        guard let data = try storage.load() else { entries = []; collections = []; return }
         let library = try JSONDecoder().decode(LibrarySnapshot.self, from: data)
         entries = library.entries.map { $0.materialize() }.sorted { $0.lastCopiedAt > $1.lastCopiedAt }
         collections = library.collections.map { $0.materialize() }
@@ -42,13 +30,9 @@ import Observation
     private func commit() throws {
         do {
             let data = try JSONEncoder().encode(LibrarySnapshot(entries: entries.map(EntrySnapshot.init), collections: collections.map(CollectionSnapshot.init)))
-            let records = try context.fetch(NSFetchRequest<NSManagedObject>(entityName: "LibraryRecord"))
-            let record = records.first ?? NSEntityDescription.insertNewObject(forEntityName: "LibraryRecord", into: context)
-            if record.value(forKey: "id") == nil { record.setValue(UUID(), forKey: "id") }
-            record.setValue(data, forKey: "snapshot")
-            try context.save()
+            try storage.save(data)
             entries.sort { $0.lastCopiedAt > $1.lastCopiedAt }
-        } catch { context.rollback(); try? reload(); throw error }
+        } catch { try? reload(); throw error }
     }
 
     @discardableResult public func capture(_ payload: ClipPayload, sourceName: String = "", sourceID: String = "", at: Date = Date()) throws -> ClipEntry {

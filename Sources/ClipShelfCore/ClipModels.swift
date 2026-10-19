@@ -109,7 +109,15 @@ public enum CapturePolicy {
 
 public struct CaptureCursor: Sendable {
     private var count: Int
-    public init(initialCount: Int) { count = initialCount }
+    private var sourceID: String?
+    public init(initialCount: Int, sourceID: String? = nil) { count = initialCount; self.sourceID = sourceID }
+    public mutating func sourceChanged(_ sourceID: String?, currentCount: Int) {
+        self.sourceID = sourceID; count = currentCount
+    }
+    public mutating func consume(_ newCount: Int, sourceID: String?) -> Bool {
+        guard self.sourceID == sourceID else { sourceChanged(sourceID, currentCount: newCount); return false }
+        return consume(newCount)
+    }
     public mutating func consume(_ newCount: Int) -> Bool {
         guard newCount != count else { return false }
         count = newCount
