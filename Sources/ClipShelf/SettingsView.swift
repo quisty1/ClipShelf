@@ -57,9 +57,17 @@ struct SettingsView: View {
                         Button("Настройки macOS") { app.openClipboardSettings() }
                     }
                     HStack {
-                        VStack(alignment: .leading) { Text("Автоматическая вставка"); Text(accessibility ? "Универсальный доступ разрешён" : "Без разрешения доступно копирование").font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading) { Text("Автоматическая вставка"); Text(accessibility ? "Доступ разрешён — можно вставлять по Enter" : "macOS пока не разрешает автоматическую вставку").font(.caption).foregroundStyle(.secondary) }
                         Spacer()
-                        Button("Разрешить…") { app.requestAccessibility(); accessibility = AXIsProcessTrusted() }
+                        Button("Настроить вставку…") { app.requestAccessibility() }
+                    }
+                    if !accessibility {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("1. Нажмите «Настроить вставку» — откроются системные настройки.")
+                            Text("2. В разделе «\(app.automationSettingsName)» включите ClipShelf.")
+                            Text("Если переключатель уже включён, разрешение могло остаться от старой сборки. Выберите ClipShelf, нажмите «−», затем «+» и добавьте текущее приложение заново.")
+                            Button("Показать текущее приложение в Finder") { app.revealApplication() }
+                        }.font(.caption).foregroundStyle(.secondary)
                     }
                     Text("Для фоновой истории выберите «Всегда разрешать» в разрешениях на чтение буфера. При отказе приложение не повторяет запросы автоматически.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -153,10 +161,10 @@ struct OnboardingView: View {
                 Label("Паузу и исключения можно включить в настройках", systemImage: "pause.circle")
             }.font(.callout)
             Divider()
-            Text("Разрешите чтение буфера → «Всегда разрешать». Для автоматической вставки нужен «Универсальный доступ». Можно настроить позже — тогда выбранное копируется для вставки через ⌘V.").font(.callout).foregroundStyle(.secondary)
+            Text("Разрешите чтение буфера → «Всегда разрешать». Для автоматической вставки нажмите «Настроить вставку» и включите ClipShelf в разделе «\(app.automationSettingsName)». Можно настроить позже — тогда выбранное копируется для вставки через ⌘V.").font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("Разрешить чтение") { app.monitor.requestAccess() }
-                Button("Разрешить вставку") { app.requestAccessibility() }
+                Button("Настроить вставку") { app.requestAccessibility() }
             }
             HStack {
                 Text("Старое содержимое буфера не импортируется.").font(.caption).foregroundStyle(.secondary)

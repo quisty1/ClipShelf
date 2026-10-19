@@ -84,6 +84,7 @@ final class ShelfPanel: NSPanel {
             p.setFrameOrigin(NSPoint(x: rect.midX - p.frame.width / 2, y: rect.midY - p.frame.height / 2 + 35))
         }
         presentationID = UUID()
+        panel?.level = .floating
         NSApp.activate(ignoringOtherApps: true)
         panel?.makeKeyAndOrderFront(nil)
     }
@@ -104,11 +105,35 @@ final class ShelfPanel: NSPanel {
         catch { notify(error.localizedDescription) }
     }
     var accessibilityAllowed: Bool { AXIsProcessTrusted() }
+    var automationSettingsName: String {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            ? "Device Control and Data Access"
+            : "Универсальный доступ / Accessibility"
+    }
+    private func prepareForExternalSettings() {
+        showSettings = false; showOnboarding = false
+        panel?.level = .normal
+        hide()
+    }
     func requestAccessibility() {
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        let opened = PermissionHelp.open(
+            prepare: prepareForExternalSettings,
+            hasAccess: { self.accessibilityAllowed },
+            requestAccess: {
+                _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            },
+            openSettings: {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        )
+        if !opened { show(); notify("Откройте Системные настройки → Privacy & Security → \(automationSettingsName).") }
+    }
+    func revealApplication() {
+        prepareForExternalSettings()
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
     func openClipboardSettings() {
+        prepareForExternalSettings()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Pasteboard")!)
     }
     func use(_ entry: ClipEntry, copyOnly: Bool = false, transform: TextTransform? = nil) {
@@ -116,7 +141,7 @@ final class ShelfPanel: NSPanel {
         catch { notify(error.localizedDescription); return }
         guard !copyOnly else { hide(); target?.activate(options: []); return }
         guard accessibilityAllowed else {
-            notify("Скопировано. Нажмите ⌘V или включите «Универсальный доступ» в настройках ClipShelf.")
+            notify("Скопировано. Для автовставки откройте настройки ClipShelf → «Настроить вставку». Если ClipShelf уже включён в macOS, удалите старую запись и добавьте приложение заново.")
             return
         }
         guard let destination = target, !destination.isTerminated else {

@@ -13,7 +13,11 @@ func require<T>(_ value: T?) throws -> T {
 @main struct TestRunner {
     @MainActor static func main() {
         let p = PayloadTests(); let r = RepositoryTests(); let b = PasteboardTests()
+        let permissions = PermissionHelpTests()
         let tests: [(String, () throws -> Void)] = [
+            ("suppressed permission prompt opens settings", permissions.deniedOrStalePermissionStillNavigatesWhenPromptIsSuppressed),
+            ("granted permission settings navigation", permissions.allowedPermissionOpensSettingsWithoutAskingAgain),
+            ("failed settings navigation", permissions.navigationFailureIsReported),
             ("source-transition privacy", p.sourceTransitionsDiscardAmbiguousCopies),
             ("first-save failure recovery", r.firstSaveFailureLeavesNoGhostOrBrokenImageReference),
             ("HTML-only capture", b.htmlOnlyCaptureHasSearchableTextAndKeepsOriginalHTML),
