@@ -8,6 +8,8 @@ struct CollectionDraft: Identifiable { let id = UUID(); var collection: ClipColl
 struct SnippetDraft: Identifiable { let id = UUID(); var entry: ClipEntry? }
 
 struct ShelfView: View {
+    @Environment(\.appLanguage) private var language
+    private var strings: Localizer { Localizer(language: language) }
     @Bindable var app: AppController
     @State private var query = ""
     @State private var scope: ShelfScope = .history
@@ -15,6 +17,7 @@ struct ShelfView: View {
     @State private var selectedID: UUID?
     @State private var collectionDraft: CollectionDraft?
     @State private var snippetDraft: SnippetDraft?
+    @State private var clearConfirmation = false
     @FocusState private var searchFocused: Bool
 
     private var visible: [ClipEntry] {
@@ -30,10 +33,10 @@ struct ShelfView: View {
     private var selected: ClipEntry? { visible.first { $0.id == selectedID } }
     private var scopeTitle: String {
         switch scope {
-        case .history: "История"
-        case .favorites: "Избранное"
-        case .snippets: "Шаблоны"
-        case .collection(let id): app.repository.collections.first { $0.id == id }?.name ?? "Коллекция"
+        case .history: strings("History")
+        case .favorites: strings("Favorites")
+        case .snippets: strings("Snippets")
+        case .collection(let id): app.repository.collections.first { $0.id == id }?.name ?? strings("Collection")
         }
     }
 
@@ -45,19 +48,19 @@ struct ShelfView: View {
                 Spacer()
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Найти в истории…", text: $query)
+                    TextField(strings("Search history…"), text: $query)
                         .textFieldStyle(.plain).focused($searchFocused)
-                        .accessibilityLabel("Поиск по истории")
+                        .accessibilityLabel(strings("Search history"))
                     if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel("Очистить поиск")
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel(strings("Clear search"))
                     } else { Text("⌘F").font(.caption).foregroundStyle(.tertiary) }
                 }
                 .padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 9))
                 .frame(maxWidth: 440)
                 Button { monitorPause() } label: { Image(systemName: app.preferences.paused ? "play.circle" : "pause.circle") }
-                    .buttonStyle(.plain).font(.title3).help(app.preferences.paused ? "Продолжить запись" : "Приостановить запись")
+                    .buttonStyle(.plain).font(.title3).help(app.preferences.paused ? strings("Resume Recording") : strings("Pause Recording"))
                 Button { app.showSettings = true } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain).font(.title3).help("Настройки")
+                    .buttonStyle(.plain).font(.title3).help(strings("Settings"))
             }
             .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 18)
             Divider()
@@ -71,18 +74,18 @@ struct ShelfView: View {
             Divider()
             footer
             if let notice = app.notice {
-                HStack { Image(systemName: "info.circle"); Text(notice).textSelection(.enabled); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain) }
+                HStack { Image(systemName: "info.circle"); Text(notice.text(strings: strings)).textSelection(.enabled); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain) }
                     .font(.callout).padding(12).background(.tint.opacity(0.12))
             }
             if let error = app.monitor.errorMessage {
-                HStack { Image(systemName: "exclamationmark.triangle"); Text(error); Spacer(); Button("Закрыть") { app.monitor.errorMessage = nil } }
+                HStack { Image(systemName: "exclamationmark.triangle"); Text(error.text(strings: strings)); Spacer(); Button(strings("Dismiss")) { app.monitor.errorMessage = nil } }
                     .font(.callout).padding(10).background(Color.orange.opacity(0.14))
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Color(red: 0.15, green: 0.50, blue: 0.44))
         .accentColor(Color(red: 0.15, green: 0.50, blue: 0.44))
-        .background(KeyboardRouter(active: !app.showSettings && !app.showOnboarding && collectionDraft == nil && snippetDraft == nil,
+        .background(KeyboardRouter(active: !app.showSettings && !app.showOnboarding && collectionDraft == nil && snippetDraft == nil && !clearConfirmation,
             move: moveSelection, submit: { copy in if let selected { app.use(selected, copyOnly: copy) } },
             escape: { app.hide() }, focus: { searchFocused = true }))
         .onAppear { resetSearch() }
@@ -91,6 +94,14 @@ struct ShelfView: View {
             if !visible.contains(where: { $0.id == selectedID }) { selectedID = visible.first?.id }
         }
         .onChange(of: scope) { selectedID = visible.first?.id; searchFocused = true }
+        .alert(strings("Clear History?"), isPresented: $clearConfirmation) {
+            Button(strings("Cancel"), role: .cancel) {}
+            Button(strings("Clear History"), role: .destructive) {
+                app.perform { try app.repository.clear(includeProtected: false) }
+            }
+        } message: {
+            Text(strings("Favorites, snippets, and items in collections will be kept. This cannot be undone."))
+        }
         .sheet(isPresented: $app.showSettings) { SettingsView(app: app) }
         .sheet(isPresented: $app.showOnboarding) { OnboardingView(app: app) }
         .sheet(item: $collectionDraft) { draft in CollectionEditor(app: app, collection: draft.collection) }
@@ -99,33 +110,33 @@ struct ShelfView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("БИБЛИОТЕКА").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(1).padding(.horizontal, 10).padding(.bottom, 8)
-            scopeButton("История", symbol: "clock", value: .history, count: app.repository.entries.count)
-            scopeButton("Избранное", symbol: "star", value: .favorites, count: app.repository.entries.filter(\.isFavorite).count)
-            scopeButton("Шаблоны", symbol: "text.badge.plus", value: .snippets, count: app.repository.entries.filter(\.isSnippet).count)
+            Text(strings("LIBRARY")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).tracking(1).padding(.horizontal, 10).padding(.bottom, 8)
+            scopeButton(strings("History"), symbol: "clock", value: .history, count: app.repository.entries.count)
+            scopeButton(strings("Favorites"), symbol: "star", value: .favorites, count: app.repository.entries.filter(\.isFavorite).count)
+            scopeButton(strings("Snippets"), symbol: "text.badge.plus", value: .snippets, count: app.repository.entries.filter(\.isSnippet).count)
             HStack {
-                Text("КОЛЛЕКЦИИ").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                Text(strings("COLLECTIONS")).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
                 Spacer()
-                Button { collectionDraft = CollectionDraft() } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("Создать коллекцию")
+                Button { collectionDraft = CollectionDraft() } label: { Image(systemName: "plus") }.buttonStyle(.plain).help(strings("Create Collection"))
             }.padding(.horizontal, 10).padding(.top, 28).padding(.bottom, 6)
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(app.repository.collections, id: \.id) { collection in
                         scopeButton(collection.name, symbol: "folder", value: .collection(collection.id), count: app.repository.entries.filter { $0.collectionIDs.contains(collection.id) }.count)
                             .contextMenu {
-                                Button("Переименовать…") { collectionDraft = CollectionDraft(collection: collection) }
-                                Button("Удалить коллекцию", role: .destructive) {
+                                Button(strings("Rename…")) { collectionDraft = CollectionDraft(collection: collection) }
+                                Button(strings("Delete Collection"), role: .destructive) {
                                     app.perform { try app.repository.deleteCollection(collection) }
                                     if scope == .collection(collection.id) { scope = .history }
                                 }
                             }
                     }
-                    if app.repository.collections.isEmpty { Text("Соберите важное\nпо темам").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading).padding(10) }
+                    if app.repository.collections.isEmpty { Text(strings("Organize what matters\nby topic")).font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading).padding(10) }
                 }
             }
             Spacer(minLength: 8)
-            Button { snippetDraft = SnippetDraft() } label: { Label("Новый шаблон", systemImage: "plus") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
-            Text("Скопированное под рукой.").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.horizontal, 10).padding(.top, 8)
+            Button { snippetDraft = SnippetDraft() } label: { Label(strings("New Snippet"), systemImage: "plus") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
+            Text(strings("Your clipboard, within reach.")).font(.system(size: 10)).foregroundStyle(.tertiary).padding(.horizontal, 10).padding(.top, 8)
         }.padding(.horizontal, 12).padding(.vertical, 24)
     }
 
@@ -149,16 +160,25 @@ struct ShelfView: View {
                 Text(scopeTitle).font(.headline).lineLimit(1)
                 Spacer()
                 Text("\(visible.count)").font(.caption).foregroundStyle(.secondary)
+                if scope == .history {
+                    Button { clearConfirmation = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(strings("Clear History…"))
+                    .accessibilityLabel(strings("Clear History…"))
+                    .disabled(!app.repository.entries.contains { !$0.isProtected })
+                }
             }.padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 12)
-            Picker("Тип содержимого", selection: $kind) {
-                Text("Все").tag(ClipKind?.none)
-                ForEach(ClipKind.allCases, id: \.self) { Text($0.label).tag(Optional($0)) }
+            Picker(strings("Content Type"), selection: $kind) {
+                Text(strings("All")).tag(ClipKind?.none)
+                ForEach(ClipKind.allCases, id: \.self) { Text($0.label(language: language)).tag(Optional($0)) }
             }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 14).padding(.bottom, 14)
             if visible.isEmpty {
                 VStack(spacing: 13) {
                     Image(systemName: query.isEmpty ? "square.on.square" : "magnifyingglass").font(.system(size: 36, weight: .light)).foregroundStyle(.tertiary)
-                    Text(query.isEmpty ? "Здесь появится скопированное" : "Ничего не найдено").font(.headline)
-                    Text(query.isEmpty ? "Скопируйте текст, ссылку или картинку.\nВажное можно сохранить в коллекцию." : "Попробуйте другой запрос или тип.")
+                    Text(query.isEmpty ? strings("Your copies will appear here") : strings("No Results")).font(.headline)
+                    Text(query.isEmpty ? strings("Copy text, a link, or an image.\nSave important items to a collection.") : strings("Try another search or content type."))
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -187,44 +207,44 @@ struct ShelfView: View {
         if let entry = selected {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("ПРЕДПРОСМОТР").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                    Text(strings("PREVIEW")).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
                     Spacer()
-                    Button { app.perform { try app.repository.toggleFavorite(entry) } } label: { Image(systemName: entry.isFavorite ? "star.fill" : "star") }.buttonStyle(.plain).foregroundStyle(entry.isFavorite ? .orange : .secondary).help("Избранное")
-                    Button { app.expand(entry) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).help("Увеличить предпросмотр")
+                    Button { app.perform { try app.repository.toggleFavorite(entry) } } label: { Image(systemName: entry.isFavorite ? "star.fill" : "star") }.buttonStyle(.plain).foregroundStyle(entry.isFavorite ? .orange : .secondary).help(strings("Favorites"))
+                    Button { app.expand(entry) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).help(strings("Expand Preview"))
                 }
-                Text(entry.displayTitle).font(.system(size: 16, weight: .semibold)).lineLimit(3)
+                Text(entry.displayTitle(language: language)).font(.system(size: 16, weight: .semibold)).lineLimit(3)
                 PreviewContent(entry: entry, repository: app.repository, expanded: false)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 VStack(alignment: .leading, spacing: 7) {
-                    Label(entry.sourceName.isEmpty ? "Буфер обмена" : entry.sourceName, systemImage: "app").lineLimit(1)
-                    Label(entry.lastCopiedAt.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
-                    if entry.rtf != nil || entry.html != nil { Label("Форматирование сохранено", systemImage: "textformat") }
-                    if entry.isProtected { Label("Сохраняется до удаления", systemImage: "pin") }
+                    Label(entry.displaySource(language: language), systemImage: "app").lineLimit(1)
+                    Label(entry.lastCopiedAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(language.locale)), systemImage: "clock")
+                    if entry.rtf != nil || entry.html != nil { Label(strings("Formatting preserved"), systemImage: "textformat") }
+                    if entry.isProtected { Label(strings("Kept until you delete it"), systemImage: "pin") }
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
                 HStack {
-                    Menu { collectionMenu(entry) } label: { Label("В коллекцию", systemImage: "folder.badge.plus") }
+                    Menu { collectionMenu(entry) } label: { Label(strings("Add to Collection"), systemImage: "folder.badge.plus") }
                     Menu { entryMenu(entry) } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 28)
                 }
-                Button { app.use(entry) } label: { HStack { Text("Вставить"); Spacer(); Text("↵").foregroundStyle(.white.opacity(0.7)) }.padding(.vertical, 3) }
+                Button { app.use(entry) } label: { HStack { Text(strings("Paste")); Spacer(); Text("↵").foregroundStyle(.white.opacity(0.7)) }.padding(.vertical, 3) }
                     .buttonStyle(ShelfPrimaryButtonStyle())
             }.padding(22)
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "viewfinder").font(.system(size: 35, weight: .ultraLight))
-                Text("Выберите запись").font(.callout)
-                Text("↑ ↓ для навигации\n↵ для быстрой вставки").font(.caption).multilineTextAlignment(.center)
+                Text(strings("Select an Item")).font(.callout)
+                Text(strings("↑ ↓ to navigate\n↵ to paste")).font(.caption).multilineTextAlignment(.center)
             }.foregroundStyle(.tertiary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private var footer: some View {
         HStack(spacing: 7) {
-            Circle().fill(app.preferences.paused ? Color.orange : (NSPasteboard.general.accessBehavior == .alwaysAllow ? Color.accentColor : .orange)).frame(width: 5, height: 5)
+            Circle().fill(app.preferences.paused ? Color.orange : (app.monitor.canRead ? Color.accentColor : .orange)).frame(width: 5, height: 5)
             Text(app.monitor.status).lineLimit(1)
             Spacer()
-            Text("↑ ↓ выбор").padding(.trailing, 10)
-            Text("⌘↵ копировать").padding(.trailing, 10)
-            Text("esc закрыть")
+            Text(strings("↑ ↓ select")).padding(.trailing, 10)
+            Text(strings("⌘↵ copy")).padding(.trailing, 10)
+            Text(strings("esc close"))
         }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 12)
     }
 
@@ -234,24 +254,24 @@ struct ShelfView: View {
                 if entry.collectionIDs.contains(collection.id) { Label(collection.name, systemImage: "checkmark") } else { Text(collection.name) }
             }
         }
-        if app.repository.collections.isEmpty { Text("Сначала создайте коллекцию") }
+        if app.repository.collections.isEmpty { Text(strings("Create a collection first")) }
         Divider()
-        Button("Новая коллекция…") { collectionDraft = CollectionDraft() }
+        Button(strings("New Collection…")) { collectionDraft = CollectionDraft() }
     }
     @ViewBuilder private func entryMenu(_ entry: ClipEntry) -> some View {
-        Button("Вставить") { app.use(entry) }
-        Button("Скопировать") { app.use(entry, copyOnly: true) }
+        Button(strings("Paste")) { app.use(entry) }
+        Button(strings("Copy")) { app.use(entry, copyOnly: true) }
         if entry.text != nil {
-            Menu("Преобразовать и вставить") {
-                ForEach(TextTransform.allCases, id: \.self) { transform in Button(transform.label) { app.use(entry, transform: transform) } }
+            Menu(strings("Transform and Paste")) {
+                ForEach(TextTransform.allCases, id: \.self) { transform in Button(transform.label(language: language)) { app.use(entry, transform: transform) } }
             }
-            Button(entry.isSnippet ? "Редактировать шаблон…" : "Сохранить как шаблон…") { snippetDraft = SnippetDraft(entry: entry) }
+            Button(entry.isSnippet ? strings("Edit Snippet…") : strings("Save as Snippet…")) { snippetDraft = SnippetDraft(entry: entry) }
         }
-        Button(entry.isFavorite ? "Убрать из избранного" : "В избранное") { app.perform { try app.repository.toggleFavorite(entry) } }
-        Menu("Коллекции") { collectionMenu(entry) }
-        Button("Увеличить предпросмотр") { app.expand(entry) }
+        Button(entry.isFavorite ? strings("Remove from Favorites") : strings("Add to Favorites")) { app.perform { try app.repository.toggleFavorite(entry) } }
+        Menu(strings("Collections")) { collectionMenu(entry) }
+        Button(strings("Expand Preview")) { app.expand(entry) }
         Divider()
-        Button("Удалить запись", role: .destructive) { app.perform { try app.repository.delete(entry) } }
+        Button(strings("Delete Item"), role: .destructive) { app.perform { try app.repository.delete(entry) } }
     }
     private func monitorPause() { app.monitor.ignoreCurrent(); app.preferences.paused.toggle() }
     private func resetSearch() { query = ""; selectedID = visible.first?.id; searchFocused = true }
@@ -271,6 +291,8 @@ struct ShelfPrimaryButtonStyle: ButtonStyle {
 }
 
 struct ClipRow: View {
+    @Environment(\.appLanguage) private var language
+    private var strings: Localizer { Localizer(language: language) }
     let entry: ClipEntry
     let imageURL: URL?
     let selected: Bool
@@ -284,13 +306,13 @@ struct ClipRow: View {
             }.frame(width: 42, height: 42)
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Text(entry.displayTitle).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    Text(entry.displayTitle(language: language)).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     Spacer(minLength: 3)
                     if entry.isFavorite { Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.orange) }
                 }
                 if let text = entry.text, !entry.title.isEmpty { Text(String(text.prefix(150))).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
                 HStack(spacing: 5) {
-                    Text(entry.sourceName.isEmpty ? entry.kind.label : entry.sourceName).lineLimit(1)
+                    Text(entry.displaySource(language: language, fallbackToKind: true)).lineLimit(1)
                     Text("·")
                     Text(entry.lastCopiedAt, style: .relative).lineLimit(1)
                 }.font(.system(size: 10)).foregroundStyle(.secondary)
@@ -319,6 +341,8 @@ enum ImageThumbnail {
 }
 
 struct PreviewContent: View {
+    @Environment(\.appLanguage) private var language
+    private var strings: Localizer { Localizer(language: language) }
     let entry: ClipEntry
     let repository: ClipRepository
     let expanded: Bool
@@ -326,13 +350,13 @@ struct PreviewContent: View {
         if entry.kind == .image, let url = repository.imageURL(for: entry) {
             Thumbnail(url: url).frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(8).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityLabel("Предпросмотр изображения")
+                .accessibilityLabel(strings("Image Preview"))
         } else {
             ScrollView {
                 Text(expanded ? (entry.text ?? "") : String((entry.text ?? "").prefix(12_000)))
                     .font(.system(size: expanded ? 15 : 12, design: .monospaced)).lineSpacing(5)
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                if !expanded && (entry.text?.count ?? 0) > 12_000 { Text("Показан фрагмент. Откройте увеличенный предпросмотр.").font(.caption).foregroundStyle(.secondary).padding(8) }
+                if !expanded && (entry.text?.count ?? 0) > 12_000 { Text(strings("Showing an excerpt. Open the expanded preview for the full text.")).font(.caption).foregroundStyle(.secondary).padding(8) }
             }.background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 10))
         }
     }
@@ -357,7 +381,7 @@ struct KeyboardRouter: NSViewRepresentable {
         init(_ configuration: KeyboardRouter) { self.configuration = configuration }
         func install() {
             token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, configuration.active, let window = view?.window, event.window === window, window.isKeyWindow else { return event }
+                guard let self, configuration.active, let window = view?.window, event.window === window, window.isKeyWindow, window.attachedSheet == nil else { return event }
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
                 if flags.isEmpty {
                     switch event.keyCode {

@@ -3,8 +3,14 @@ import Observation
 import ClipShelfCore
 
 @Observable final class ClipboardMonitor {
-    var status = "Запись ещё не включена"
-    var errorMessage: String?
+    private var statusKey = "Recording has not started"
+    var status: String { Localizer(language: preferences.language)(statusKey) }
+    var canRead: Bool {
+        if #available(macOS 15.4, *) { return board.accessBehavior == .alwaysAllow }
+        // Earlier macOS versions do not have per-app clipboard permissions.
+        return true
+    }
+    var errorMessage: InterfaceMessage?
     @ObservationIgnored private let repository: ClipRepository
     @ObservationIgnored private let preferences: Preferences
     @ObservationIgnored private var timer: Timer?
@@ -44,11 +50,11 @@ import ClipShelfCore
     func ignoreCurrent() { cursor.ignoreThrough(board.changeCount) }
     func capturePending() { tick() }
     private func updateStatus() {
-        if preferences.paused { status = "Запись на паузе" }
-        else if !preferences.completedOnboarding { status = "Завершите настройку" }
-        else if board.accessBehavior == .alwaysDeny { status = "Чтение буфера запрещено в macOS" }
-        else if board.accessBehavior != .alwaysAllow { status = "Для истории разрешите постоянное чтение буфера" }
-        else { status = "История записывается" }
+        if preferences.paused { statusKey = "Recording paused" }
+        else if !preferences.completedOnboarding { statusKey = "Finish setup" }
+        else if #available(macOS 15.4, *), board.accessBehavior == .alwaysDeny { statusKey = "Clipboard reading is denied in macOS" }
+        else if !canRead { statusKey = "Allow clipboard reading at all times to record history" }
+        else { statusKey = "Recording history" }
     }
     private func tick() {
         updateStatus()
@@ -58,16 +64,16 @@ import ClipShelfCore
         if Date().timeIntervalSince(lastPrune) > 60 {
             lastPrune = Date()
             do { try repository.prune(limit: preferences.historyLimit, days: preferences.retentionDays) }
-            catch { errorMessage = "Не удалось очистить историю: \(error.localizedDescription)" }
+            catch { errorMessage = InterfaceMessage(key: "Could not clear history: %@", error: error) }
         }
-        guard changed, board.accessBehavior == .alwaysAllow else { return }
+        guard changed, canRead else { return }
         guard source?.bundleIdentifier != Bundle.main.bundleIdentifier,
               CapturePolicy.allows(paused: false, source: source?.bundleIdentifier, excluded: Set(preferences.exclusions), types: []) else { return }
         let count = board.changeCount
         do {
             guard let payload = try PasteboardCodec.read(from: board), board.changeCount == count else { return }
-            try repository.capture(payload, sourceName: source?.localizedName ?? "Приложение", sourceID: source?.bundleIdentifier ?? "")
+            try repository.capture(payload, sourceName: source?.localizedName ?? "", sourceID: source?.bundleIdentifier ?? "")
             try repository.prune(limit: preferences.historyLimit, days: preferences.retentionDays)
-        } catch { errorMessage = error.localizedDescription }
+        } catch { errorMessage = InterfaceMessage(error: error) }
     }
 }

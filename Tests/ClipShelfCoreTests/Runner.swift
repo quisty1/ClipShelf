@@ -14,7 +14,13 @@ func require<T>(_ value: T?) throws -> T {
     @MainActor static func main() {
         let p = PayloadTests(); let r = RepositoryTests(); let b = PasteboardTests()
         let permissions = PermissionHelpTests()
+        let interface = InterfaceTests()
         let tests: [(String, () throws -> Void)] = [
+            ("interface preference defaults and persistence", interface.settingsDefaultPersistAndRecoverFromInvalidValues),
+            ("complete EN/RU localization", interface.translationsCoverBothLanguagesAndFormatArguments),
+            ("localized presentation preserves content", interface.presentationTranslatesWithoutChangingSavedContent),
+            ("protected clear persists entries and images", r.clearingHistoryPreservesProtectedEntriesAndImagesAcrossRestart),
+            ("failed clear preserves entries and files", r.failedClearKeepsEntriesAndImages),
             ("suppressed permission prompt opens settings", permissions.deniedOrStalePermissionStillNavigatesWhenPromptIsSuppressed),
             ("granted permission settings navigation", permissions.allowedPermissionOpensSettingsWithoutAskingAgain),
             ("failed settings navigation", permissions.navigationFailureIsReported),

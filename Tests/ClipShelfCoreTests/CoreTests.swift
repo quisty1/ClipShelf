@@ -169,6 +169,49 @@ struct RepositoryTests {
         print("Search of 1000 entries: \(String(format: "%.3f", Date().timeIntervalSince(start))) s")
     }
 
+    func clearingHistoryPreservesProtectedEntriesAndImagesAcrossRestart() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let repo = try ClipRepository(directory: dir)
+        let normal = try repo.capture(ClipPayload(png: Data([1])))
+        let normalImage = try require(repo.imageURL(for: normal))
+        let favorite = try repo.capture(ClipPayload(png: Data([2])))
+        try repo.toggleFavorite(favorite)
+        let favoriteImage = try require(repo.imageURL(for: favorite))
+        let collection = try repo.createCollection("Моя коллекция")
+        let collected = try repo.capture(ClipPayload(png: Data([3])))
+        try repo.toggleCollection(collection.id, for: collected)
+        let collectedImage = try require(repo.imageURL(for: collected))
+        let snippet = try repo.saveSnippet(title: "Шаблон", text: "Содержимое")
+        _ = try repo.capture(ClipPayload(text: "ordinary"))
+        try repo.clear(includeProtected: false)
+        expect(!FileManager.default.fileExists(atPath: normalImage.path))
+        expect(FileManager.default.fileExists(atPath: favoriteImage.path))
+        expect(FileManager.default.fileExists(atPath: collectedImage.path))
+        let restored = try ClipRepository(directory: dir)
+        expect(Set(restored.entries.map(\.id)) == Set([favorite.id, collected.id, snippet.id]))
+        expect(restored.collections.first?.name == "Моя коллекция")
+        expect(try restored.payload(for: require(restored.entries.first { $0.id == favorite.id })).png == Data([2]))
+        try restored.clear()
+        expect(restored.entries.count == 3)
+    }
+
+    func failedClearKeepsEntriesAndImages() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let storage = ClearFailureStorage()
+        let repo = try ClipRepository(directory: dir, storage: storage)
+        let entry = try repo.capture(ClipPayload(png: Data([1, 2, 3])))
+        let imageURL = try require(repo.imageURL(for: entry))
+        storage.failSaves = true
+        do { try repo.clear(); expect(false) } catch {}
+        expect(repo.entries.map(\.id) == [entry.id])
+        expect(FileManager.default.fileExists(atPath: imageURL.path))
+        let restored = try ClipRepository(directory: dir, storage: storage)
+        expect(restored.entries.map(\.id) == [entry.id])
+        expect(try restored.payload(for: require(restored.entries.first)).png == Data([1, 2, 3]))
+    }
+
     func firstSaveFailureLeavesNoGhostOrBrokenImageReference() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -191,6 +234,16 @@ struct RepositoryTests {
     func load() throws -> Data? { data }
     func save(_ snapshot: Data) throws {
         if failNext { failNext = false; throw CocoaError(.fileWriteUnknown) }
+        data = snapshot
+    }
+}
+
+@MainActor private final class ClearFailureStorage: SnapshotStorage {
+    var data: Data?
+    var failSaves = false
+    func load() throws -> Data? { data }
+    func save(_ snapshot: Data) throws {
+        if failSaves { throw CocoaError(.fileWriteUnknown) }
         data = snapshot
     }
 }

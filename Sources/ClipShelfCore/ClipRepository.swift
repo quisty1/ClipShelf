@@ -101,7 +101,7 @@ import Observation
         try commit()
     }
     @discardableResult public func saveSnippet(title: String, text: String) throws -> ClipEntry {
-        let entry = ClipEntry(payload: ClipPayload(text: text), imageName: nil, sourceName: "Шаблон", sourceID: "", at: Date())
+        let entry = ClipEntry(payload: ClipPayload(text: text), imageName: nil, sourceName: "", sourceID: "", at: Date())
         entry.title = title.trimmingCharacters(in: .whitespacesAndNewlines); entry.isSnippet = true
         entries.append(entry); try commit(); return entry
     }

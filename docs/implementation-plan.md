@@ -5,7 +5,7 @@ Architecture: SwiftUI/AppKit application, independently testable SwiftData repos
 Spec: the user-approved plan in this conversation; copied into README feature contract.
 
 ## Constraints
-Swift 6.2; macOS 15.4+; 500 ms polling; local storage; 1000 ordinary entries / 30 days; preserve favorites, snippets and collection entries; login disabled initially.
+Swift 6.2; macOS 14+; 500 ms polling; local storage; 1000 ordinary entries / 30 days; preserve favorites, snippets and collection entries; login disabled initially.
 
 ## Tasks
 1. Core: models, payload identity, search/transforms, retention, recording policy, repository and image ownership. Write behavioral Swift Testing tests, run red, implement, run green.

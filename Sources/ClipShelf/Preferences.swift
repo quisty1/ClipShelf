@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 import Observation
 import ServiceManagement
+import ClipShelfCore
 
 struct Shortcut: Codable, Equatable {
     var keyCode: UInt32 = UInt32(kVK_ANSI_V)
@@ -11,6 +12,16 @@ struct Shortcut: Codable, Equatable {
 
 @Observable final class Preferences {
     @ObservationIgnored private let defaults: UserDefaults
+    private let interface: InterfacePreferences
+    @ObservationIgnored var interfaceChanged: (() -> Void)?
+    var language: AppLanguage {
+        get { interface.language }
+        set { interface.language = newValue; interfaceChanged?() }
+    }
+    var theme: AppTheme {
+        get { interface.theme }
+        set { interface.theme = newValue; interfaceChanged?() }
+    }
     var paused: Bool { didSet { defaults.set(paused, forKey: "paused") } }
     var completedOnboarding: Bool { didSet { defaults.set(completedOnboarding, forKey: "onboarded") } }
     var historyLimit: Int { didSet { defaults.set(historyLimit, forKey: "limit") } }
@@ -20,6 +31,7 @@ struct Shortcut: Codable, Equatable {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        interface = InterfacePreferences(defaults: defaults)
         paused = defaults.bool(forKey: "paused")
         completedOnboarding = defaults.bool(forKey: "onboarded")
         historyLimit = max(100, defaults.object(forKey: "limit") as? Int ?? 1000)
@@ -67,5 +79,5 @@ final class HotKeyService {
 }
 enum ShortcutError: LocalizedError {
     case unavailable
-    var errorDescription: String? { "Это сочетание уже занято. Выберите другое в настройках." }
+    var errorDescription: String? { Localizer()("This shortcut is already in use. Choose another one in Settings.") }
 }

@@ -4,7 +4,11 @@ import Observation
 
 public enum ClipKind: String, Codable, CaseIterable, Sendable {
     case text, link, image
-    public var label: String { switch self { case .text: "Текст"; case .link: "Ссылки"; case .image: "Изображения" } }
+    public var label: String { label(language: .english) }
+    public func label(language: AppLanguage) -> String {
+        let strings = Localizer(language: language)
+        return switch self { case .text: strings("Text"); case .link: strings("Links"); case .image: strings("Images") }
+    }
     public var symbol: String { switch self { case .text: "text.alignleft"; case .link: "link"; case .image: "photo" } }
 }
 
@@ -62,12 +66,19 @@ public struct ClipPayload: Sendable {
         isFavorite = false; isSnippet = false; collectionIDs = []
     }
 
+    public func displaySource(language: AppLanguage, fallbackToKind: Bool = false) -> String {
+        if isSnippet { return Localizer(language: language)("Snippet") }
+        if !sourceName.isEmpty { return sourceName }
+        return fallbackToKind ? kind.label(language: language) : Localizer(language: language)("Clipboard")
+    }
     public var kind: ClipKind { ClipKind(rawValue: kindRaw) ?? .text }
     public var isProtected: Bool { isFavorite || isSnippet || !collectionIDs.isEmpty }
-    public var displayTitle: String {
+    public var displayTitle: String { displayTitle(language: .english) }
+    public func displayTitle(language: AppLanguage) -> String {
+        let strings = Localizer(language: language)
         if !title.isEmpty { return title }
-        if kind == .image { return "Изображение" }
-        let line = text?.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Пустой текст"
+        if kind == .image { return strings("Image") }
+        let line = text?.split(whereSeparator: \.isNewline).first.map(String.init) ?? strings("Empty Text")
         return String(line.prefix(160))
     }
 }
@@ -81,12 +92,14 @@ public struct ClipPayload: Sendable {
 
 public enum TextTransform: String, CaseIterable, Sendable {
     case plain, trim, uppercase, lowercase
-    public var label: String {
-        switch self {
-        case .plain: "Без форматирования"
-        case .trim: "Убрать пробелы по краям"
-        case .uppercase: "В ВЕРХНИЙ РЕГИСТР"
-        case .lowercase: "в нижний регистр"
+    public var label: String { label(language: .english) }
+    public func label(language: AppLanguage) -> String {
+        let strings = Localizer(language: language)
+        return switch self {
+        case .plain: strings("Plain Text")
+        case .trim: strings("Trim Whitespace")
+        case .uppercase: strings("UPPERCASE")
+        case .lowercase: strings("lowercase")
         }
     }
     public func apply(_ value: String) -> String {

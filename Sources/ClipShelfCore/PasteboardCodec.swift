@@ -2,11 +2,13 @@ import AppKit
 
 public enum ClipboardError: LocalizedError {
     case tooLarge, unreadableImage, writeFailed
-    public var errorDescription: String? {
-        switch self {
-        case .tooLarge: "Элемент слишком большой. Максимум: 20 МБ для изображения, 5 МБ для текста."
-        case .unreadableImage: "Не удалось прочитать изображение."
-        case .writeFailed: "Не удалось записать элемент в системный буфер."
+    public var errorDescription: String? { message(language: .english) }
+    public func message(language: AppLanguage) -> String {
+        let strings = Localizer(language: language)
+        return switch self {
+        case .tooLarge: strings("Item is too large. Maximum: 20 MB for images, 5 MB for text per format.")
+        case .unreadableImage: strings("Could not read the image.")
+        case .writeFailed: strings("Could not write the item to the clipboard.")
         }
     }
 }
@@ -36,7 +38,7 @@ public enum ClipboardError: LocalizedError {
         }
         if text == nil, let html {
             let extracted = HTMLText.extract(html)
-            text = extracted.isEmpty ? "HTML-фрагмент" : extracted
+            text = extracted.isEmpty ? "HTML Fragment" : extracted
         }
         guard let text, !text.isEmpty else { return nil }
         guard text.utf8.count <= 5 * 1024 * 1024 else { throw ClipboardError.tooLarge }

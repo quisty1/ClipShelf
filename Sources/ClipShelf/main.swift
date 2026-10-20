@@ -6,16 +6,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = ProcessInfo.processInfo.arguments
         let verification = args.contains("--verify-ui")
-        if verification { NSApp.appearance = NSAppearance(named: args.contains("--light") ? .aqua : .darkAqua) }
         let directory = verification
             ? URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLIPSHELF_VERIFY_DIR"] ?? NSTemporaryDirectory() + "ClipShelf-UI-Verification")
             : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClipShelf", isDirectory: true)
+        let defaults = verification ? UserDefaults(suiteName: "app.clipshelf.verification")! : .standard
+        if verification && args.contains("--reset-preferences") { defaults.removePersistentDomain(forName: "app.clipshelf.verification") }
+        let preferences = Preferences(defaults: defaults)
+        if verification {
+            if args.contains("--light") { preferences.theme = .light }
+            if args.contains("--dark") { preferences.theme = .dark }
+            if args.contains("--system") { preferences.theme = .system }
+            if args.contains("--english") { preferences.language = .english }
+            if args.contains("--russian") { preferences.language = .russian }
+            preferences.completedOnboarding = !args.contains("--onboarding")
+        }
+        NSApp.appearance = preferences.theme.appearance
         do {
             if !verification, NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "app.clipshelf.mac").filter({ $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }).isEmpty == false {
                 NSApp.terminate(nil); return
             }
-            let preferences = Preferences(defaults: verification ? UserDefaults(suiteName: "app.clipshelf.verification")! : .standard)
-            if verification { preferences.completedOnboarding = true }
             let app = try AppController(directory: directory, preferences: preferences)
             app.isVerificationMode = verification
             controller = app
@@ -39,11 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     _ = try app.repository.capture(ClipPayload(text: String(repeating: "Длинный текст для проверки предпросмотра.\n", count: 600)), sourceName: "Тест")
                 }
             }
+            if verification && args.contains("--protected-only") { try app.repository.clear() }
             app.start()
             if verification { app.show() }
         } catch {
-            let alert = NSAlert(); alert.messageText = "Не удалось открыть ClipShelf"
-            alert.informativeText = "История не изменена. \(error.localizedDescription)\nПапка данных: \(directory.path)"
+            let strings = Localizer(language: preferences.language)
+            let alert = NSAlert(); alert.messageText = strings("Could Not Open ClipShelf")
+            alert.informativeText = strings("History is unchanged. %@\nData folder: %@", InterfaceMessage(error: error).text(strings: strings), directory.path)
+            alert.addButton(withTitle: strings("Done"))
             alert.alertStyle = .critical; alert.runModal(); NSApp.terminate(nil)
         }
     }
@@ -55,13 +67,4 @@ let application = NSApplication.shared
 let delegate = AppDelegate()
 application.delegate = delegate
 application.setActivationPolicy(.accessory)
-let mainMenu = NSMenu()
-let appMenu = NSMenu(); let appItem = NSMenuItem(); appItem.submenu = appMenu
-appMenu.addItem(withTitle: "Завершить ClipShelf", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-mainMenu.addItem(appItem)
-let editMenu = NSMenu(title: "Правка"); let editItem = NSMenuItem(title: "Правка", action: nil, keyEquivalent: ""); editItem.submenu = editMenu
-for (title, selector, key) in [("Отменить", Selector(("undo:")), "z"), ("Вырезать", #selector(NSText.cut(_:)), "x"), ("Скопировать", #selector(NSText.copy(_:)), "c"), ("Вставить", #selector(NSText.paste(_:)), "v"), ("Выделить всё", #selector(NSText.selectAll(_:)), "a")] {
-    editMenu.addItem(withTitle: title, action: selector, keyEquivalent: key)
-}
-mainMenu.addItem(editItem); application.mainMenu = mainMenu
 application.run()
